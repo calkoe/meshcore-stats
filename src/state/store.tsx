@@ -51,6 +51,13 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
     const save = (): void => {
       try {
         const data = controller.model.toJSON();
+        // Eine leere Aufzeichnung darf eine gefuellte nur dann ueberschreiben,
+        // wenn der Nutzer das Verwerfen selbst ausgeloest hat. Sonst genuegt
+        // ein zweiter Tab, der die Seite frisch geladen hat, um die
+        // Aufzeichnung des ersten wegzuschreiben.
+        if (data.events.length === 0 && !controller.clearedByUser && storedHasEvents()) {
+          return;
+        }
         for (const limit of [data.events.length, 20000, 8000, 3000, 1000]) {
           try {
             localStorage.setItem(
@@ -143,6 +150,22 @@ export function localStorageKey(): string {
 export function hasStoredRecording(): boolean {
   try {
     return !!localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Enthaelt die gespeicherte Aufzeichnung Ereignisse?
+ *
+ * Bewusst ohne vollstaendiges Parsen: die Datei ist gross, und die Frage ist
+ * nur, ob dort ueberhaupt etwas steht, das man nicht versehentlich ueberschreibt.
+ */
+function storedHasEvents(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    return !/"events"\s*:\s*\[\s*\]/.test(raw);
   } catch {
     return false;
   }

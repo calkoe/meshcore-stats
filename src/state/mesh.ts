@@ -165,6 +165,15 @@ export class MeshController {
   private requests = new Map<string, PendingRequest>();
   private heardText: HeardText[] = [];
   private packetListeners = new Set<PacketListener>();
+  /**
+   * Hat der Nutzer das Verwerfen selbst ausgeloest?
+   *
+   * Nur dann darf eine leere Aufzeichnung eine gefuellte im Browserspeicher
+   * ueberschreiben. Ohne diese Unterscheidung genuegt ein zweiter Tab, der die
+   * Seite frisch geladen hat, um die Aufzeichnung des ersten wegzuschreiben -
+   * genau das ist einmal passiert.
+   */
+  clearedByUser = false;
 
   constructor() {
     this.ble = new MeshCoreBLE({
@@ -983,6 +992,7 @@ export class MeshController {
   clearData(): void {
     this.model.clear();
     this.heardText = [];
+    this.clearedByUser = true;
     this.bump('chat');
     this.refreshNow();
   }
@@ -995,6 +1005,7 @@ export class MeshController {
   clearTraffic(): void {
     this.model.clearTraffic();
     this.heardText = [];
+    this.clearedByUser = true;
     this.bump('chat');
     this.refreshNow();
   }
