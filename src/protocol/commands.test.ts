@@ -10,7 +10,9 @@ import { describe, expect, it } from 'vitest';
 import { CMD, TXT_TYPE } from './constants';
 import {
   buildRoundTripPath,
+  cmdGetChannel,
   cmdSendLogin,
+  cmdSetChannel,
   cmdSendSelfAdvert,
   cmdSendTextMsg,
   cmdSendTracePath,
@@ -82,6 +84,35 @@ describe('Anmeldung', () => {
     expect(f[0]).toBe(CMD.SEND_LOGIN);
     expect(toHex(f.subarray(1, 33))).toBe(key);
     expect(new TextDecoder().decode(f.subarray(33))).toBe('geheim');
+  });
+});
+
+describe('Kanäle', () => {
+  it('sendet genau 50 Byte - laengere Rahmen lehnt die Firmware ab', () => {
+    const f = cmdSetChannel(2, 'Testkanal', 'a'.repeat(32));
+    // MyMesh.cpp prueft ZUERST auf 2+32+32 und antwortet darauf mit
+    // "nicht unterstuetzt". Nur der kuerzere Rahmen wird angenommen.
+    expect(f.length).toBe(50);
+    expect(f[0]).toBe(CMD.SET_CHANNEL);
+    expect(f[1]).toBe(2);
+    expect(new TextDecoder().decode(f.subarray(2, 11))).toBe('Testkanal');
+    expect(f[11]).toBe(0); // Name ist nullterminiert
+    expect(toHex(f.subarray(34, 50))).toBe('a'.repeat(32));
+  });
+
+  it('loescht durch Ueberschreiben mit Leerwerten', () => {
+    const f = cmdSetChannel(3, '', '0'.repeat(32));
+    expect(f.length).toBe(50);
+    expect(f.subarray(2, 34).every((b) => b === 0)).toBe(true);
+    expect(f.subarray(34, 50).every((b) => b === 0)).toBe(true);
+  });
+
+  it('weist einen Schluessel falscher Laenge zurueck', () => {
+    expect(() => cmdSetChannel(0, 'x', 'abcd')).toThrow(/16 Byte/);
+  });
+
+  it('fragt einen Kanalplatz ab', () => {
+    expect([...cmdGetChannel(5)]).toEqual([CMD.GET_CHANNEL, 5]);
   });
 });
 

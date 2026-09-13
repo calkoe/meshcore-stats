@@ -141,6 +141,15 @@ export interface TuningParamsFrame {
   airtimeFactor: number;
 }
 
+export interface ChannelInfoFrame {
+  code: typeof RESP.CHANNEL_INFO;
+  name: 'channel_info';
+  index: number;
+  channelName: string;
+  /** 128-Bit-Schluessel als Hex. Ein leerer Name bedeutet: Platz unbenutzt. */
+  secret: string;
+}
+
 export interface SentFrame {
   code: typeof RESP.SENT;
   name: 'sent';
@@ -183,6 +192,7 @@ export type Frame =
   | ChannelMsgFrame
   | PathDiscoveryFrame
   | LoginResultFrame
+  | ChannelInfoFrame
   | BattStorageFrame
   | TuningParamsFrame
   | SentFrame
@@ -223,6 +233,18 @@ export function parseFrame(bytes: Uint8Array): Frame | null {
 
     case RESP.NO_MORE_MESSAGES:
       return { code, name: 'no_more_messages' };
+
+    case RESP.CHANNEL_INFO:
+      // [18][idx][name 32][secret 16] - siehe CMD_GET_CHANNEL in MyMesh.cpp.
+      return bytes.length >= 50
+        ? {
+            code: RESP.CHANNEL_INFO,
+            name: 'channel_info',
+            index: bytes[1],
+            channelName: readStr(bytes, 2, 32),
+            secret: toHex(bytes.subarray(34, 50)),
+          }
+        : null;
 
     case RESP.BATT_AND_STORAGE:
       return bytes.length >= 11

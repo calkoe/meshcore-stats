@@ -11,9 +11,9 @@ import L from 'leaflet';
 import { ADV_TYPE } from '../protocol/constants';
 import { PROVENANCE } from '../model/types';
 import type { TopoView, ViewLink, ViewNode } from '../model/types';
-import { linkKey } from '../model/topology';
-import { curveBetween, rectsOverlap, type Point, type Rect } from './curve';
-import { lineDash, seqRamp, typeColor } from './palette';
+import { linkKey, statAvg } from '../model/topology';
+import { lineBetween, orientedLine, rectsOverlap, type Point, type Rect } from './curve';
+import { UNMEASURED_COLOR, lineDash, seqRamp, signalStatus, typeColor } from './palette';
 
 /** Obergrenze gleichzeitig sichtbarer Beschriftungen. */
 const MAX_LABELS = 70;
@@ -29,7 +29,8 @@ const TILE_ATTRIBUTION =
 
 export interface RenderOptions {
   theme: 'dark' | 'light';
-  scale: 'blue' | 'heat';
+  /** 'packets' faerbt nach Menge, 'signal' nach gemessener Feldstaerke. */
+  scale: 'packets' | 'signal';
   showLabels: boolean;
   onlyGateways: boolean;
   onlyDirect: boolean;
@@ -39,6 +40,8 @@ export interface RenderOptions {
   focusChain: string[] | null;
   /** Gelernter Weg zum aktuellen Chatpartner - gruen, mit Richtungspfeilen. */
   learnedPath: string[] | null;
+  /** Aktueller Chatpartner - wird auf der Karte eigens hervorgehoben. */
+  partnerKey: string | null;
 }
 
 /** Gruen fuer den gelernten Pfad. Traegt immer eine Beschriftung in der Legende. */
@@ -57,7 +60,7 @@ export interface MapCallbacks {
   onNodeClick(node: ViewNode, point: L.Point): void;
   onLinkHover(link: ViewLink, latlng: L.LatLng): void;
   onLinkOut(): void;
-  onLinkClick(link: ViewLink): void;
+  onLinkClick(link: ViewLink, point: L.Point): void;
   onStats(stats: RenderStats): void;
   onMapClick(): void;
 }
@@ -76,7 +79,7 @@ interface DrawnNode {
 
 const DEFAULT_OPTIONS: RenderOptions = {
   theme: 'dark',
-  scale: 'blue',
+  scale: 'packets',
   showLabels: true,
   onlyGateways: false,
   onlyDirect: false,
@@ -84,6 +87,7 @@ const DEFAULT_OPTIONS: RenderOptions = {
   hotOnly: 0,
   focusChain: null,
   learnedPath: null,
+  partnerKey: null,
 };
 
 /** So lange leuchtet eine Strecke auf, wenn ein Paket ueber sie eintrifft. */
@@ -226,7 +230,7 @@ export class MapRenderer {
   }
 
   private renderLinks(view: TopoView): RenderStats {
-    const ramp = seqRamp(this.options.scale, this.options.theme);
+    const ramp = seqRamp(this.options.theme);
     let links = [...view.links.values()];
     const ambiguousLinks = links.filter((l) => l.ambiguous).length;
 
@@ -273,7 +277,15 @@ export class MapRenderer {
       if (!pa || !pb) continue;
 
       const t = max > 1 ? Math.log1p(link.total) / Math.log1p(max) : 1;
-      const color = ramp[Math.min(ramp.length - 1, Math.floor(t * ramp.length))];
+      // Die Dicke zeigt immer die Menge. Die FARBE zeigt entweder ebenfalls die
+      // Menge (sequentielle Rampe) oder die gemessene Empfangsstaerke - dann in
+      // denselben vier Stufen, die auch die Tabellen und Tooltips verwenden.
+      // Strecken ohne Messung bekommen Neutralgrau, nie eine Bewertung.
+      const color =
+        this.options.scale === 'signal'
+          ? (signalStatus(statAvg(link.rssi))?.color ??
+            UNMEASURED_COLOR[this.options.theme])
+          : ramp[Math.min(ramp.length - 1, Math.floor(t * ramp.length))];
       const weight = 1 + t * 4;
       const declaredOnly =
         !link.provenance.has(PROVENANCE.MEASURED) &&
@@ -282,7 +294,7 @@ export class MapRenderer {
       const dashArray = lineDash({ ambiguous: link.ambiguous, declaredOnly });
       const opacity = link.ambiguous ? 0.5 : declaredOnly ? 0.55 : 0.9;
 
-      const latlngs = curveBetween(pa, pb);
+      const latlngs = lineBetween(pa, pb);
       const base: L.PathOptions = { color, weight, opacity, dashArray, lineCap: 'round' };
       const line = L.polyline(latlngs, { ...base, interactive: false });
       // Unsichtbare, dicke Trefferflaeche: Hit-Target groesser als die Marke.
@@ -300,7 +312,7 @@ export class MapRenderer {
       hit.on('mouseout', () => this.cb.onLinkOut());
       hit.on('click', (e) => {
         if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
-        this.cb.onLinkClick(link);
+        this.cb.onLinkClick(link, this.map.latLngToContainerPoint(e.latlng));
       });
 
       line.addTo(this.linkLayer);
@@ -343,29 +355,39 @@ export class MapRenderer {
 
       const traffic = trafficOf(node);
       const t = Math.log1p(traffic) / Math.log1p(maxTraffic);
+      const isPartner = !!this.options.partnerKey && node.key === this.options.partnerKey;
       // Kleinere Marken als frueher: in einem dichten Netz verdecken grosse
-      // Kreise die Strecken, um die es eigentlich geht.
-      const radius = node.isSelf ? 9 : 3 + t * 5.5;
+      // Kreise die Strecken, um die es eigentlich geht. Zwei Knoten sind davon
+      // ausgenommen - das eigene Geraet und der aktuelle Chatpartner. Nach
+      // genau diesen beiden sucht man beim Lesen der Karte staendig.
+      const radius = node.isSelf ? 9 : isPartner ? 8 : 3 + t * 5.5;
 
       const base: L.CircleMarkerOptions = {
         radius,
-        color: node.isSelf ? this.inkColor : this.ringColor, // Ring gegen Ueberlappung
-        weight: node.isSelf ? 3 : 1.5,
+        color: node.isSelf
+          ? this.inkColor
+          : isPartner
+            ? LEARNED_COLOR[this.options.theme]
+            : this.ringColor, // Ring gegen Ueberlappung
+        weight: node.isSelf || isPartner ? 3 : 1.5,
         fillColor: node.isSelf ? this.inkColor : typeColor(node.type, this.options.theme),
         fillOpacity: node.isSelf ? 1 : 0.95,
       };
 
-      // Das eigene Geraet bekommt zusaetzlich einen Hof. Es ist der einzige
-      // Knoten, dessen Lage man beim Lesen der Karte staendig sucht.
-      if (node.isSelf) {
+      // Hof um die beiden wichtigen Knoten. Die Farbe sagt, welcher es ist:
+      // Textfarbe = dieses Geraet, Gruen = Gegenstelle des Chats - dieselbe
+      // Farbe wie der gelernte Pfad, der dorthin fuehrt.
+      if (node.isSelf || isPartner) {
+        const halo = node.isSelf ? this.inkColor : LEARNED_COLOR[this.options.theme];
         L.circleMarker([pos.lat, pos.lon], {
           radius: radius + 8,
-          color: this.inkColor,
-          weight: 1.5,
-          opacity: 0.55,
+          color: halo,
+          weight: 2,
+          opacity: 0.7,
           fill: false,
           pane: 'nodesPane',
           interactive: false,
+          dashArray: isPartner ? '3 4' : undefined,
         }).addTo(this.nodeLayer);
       }
 
@@ -421,17 +443,23 @@ export class MapRenderer {
     if (!this.options.showLabels || this.drawn.length === 0) return;
 
     const bounds = this.map.getBounds();
+    const partnerKey = this.options.partnerKey;
+    const rank = (d: DrawnNode): number => (d.node.isSelf ? 2 : d.node.key === partnerKey ? 1 : 0);
     const candidates = this.drawn
       .filter((d) => d.node.name && bounds.contains([d.pos.lat, d.pos.lon]))
       .sort((a, b) => {
-        if (a.node.isSelf !== b.node.isSelf) return a.node.isSelf ? -1 : 1;
+        const r = rank(b) - rank(a);
+        if (r !== 0) return r;
         return b.traffic - a.traffic || a.node.name.localeCompare(b.node.name);
       });
 
     const occupied: Rect[] = [];
     let placed = 0;
     for (const d of candidates) {
-      if (placed >= MAX_LABELS) break;
+      // Eigenes Geraet und Chatpartner werden IMMER beschriftet - sie sollen
+      // nicht wegen eines zufaellig danebenliegenden Namens verschwinden.
+      const pinned = rank(d) > 0;
+      if (!pinned && placed >= MAX_LABELS) break;
       const pt = this.map.latLngToContainerPoint([d.pos.lat, d.pos.lon]);
       const rect: Rect = {
         x: pt.x + d.radius + 4,
@@ -439,12 +467,12 @@ export class MapRenderer {
         w: d.node.name.length * 6.1 + 6,
         h: 14,
       };
-      if (occupied.some((r) => rectsOverlap(r, rect))) continue;
+      if (!pinned && occupied.some((r) => rectsOverlap(r, rect))) continue;
       occupied.push(rect);
       placed++;
 
       const span = document.createElement('span');
-      span.className = 'node-label__text';
+      span.className = pinned ? 'node-label__text node-label__text--pinned' : 'node-label__text';
       span.textContent = d.node.name;
 
       L.marker([d.pos.lat, d.pos.lon], {
@@ -480,7 +508,7 @@ export class MapRenderer {
       const from = this.posForKey(path[i]);
       const to = this.posForKey(path[i + 1]);
       if (!from || !to || path[i] === path[i + 1]) continue;
-      const pts = orientedCurve(from, to);
+      const pts = orientedLine(from, to);
       this.learnedSegments.push(pts);
       L.polyline(pts, {
         color,
@@ -504,16 +532,22 @@ export class MapRenderer {
     const color = LEARNED_COLOR[this.options.theme];
 
     for (const pts of this.learnedSegments) {
-      const mid = Math.floor(pts.length / 2);
-      const a = this.map.latLngToContainerPoint(pts[Math.max(0, mid - 1)]);
-      const b = this.map.latLngToContainerPoint(pts[Math.min(pts.length - 1, mid + 1)]);
+      const from = pts[0];
+      const to = pts[pts.length - 1];
+      // Der Pfeil sitzt in der Mitte der Strecke und zeigt in Laufrichtung.
+      // Der Winkel wird im Bildschirmraum bestimmt, sonst stimmt er in
+      // hoeheren Breiten nicht mit dem Gezeichneten ueberein.
+      const a = this.map.latLngToContainerPoint(from);
+      const b = this.map.latLngToContainerPoint(to);
       const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+      const mid: [number, number] = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2];
+
       const span = document.createElement('span');
       span.style.transform = `rotate(${angle.toFixed(1)}deg)`;
       span.style.color = color;
       span.textContent = '▶';
 
-      L.marker(pts[mid], {
+      L.marker(mid, {
         interactive: false,
         pane: 'nodesPane',
         icon: L.divIcon({
@@ -648,17 +682,3 @@ function trafficOf(n: ViewNode): number {
   return n.stats ? n.stats.asHop + n.stats.asOrigin + n.stats.asTransmitter : 0;
 }
 
-/**
- * Wie curveBetween(), aber in LAUFRICHTUNG von `from` nach `to`.
- *
- * curveBetween() normalisiert die Reihenfolge der Endpunkte, damit dieselbe
- * Strecke immer dieselbe Woelbung bekommt. Fuer Richtungspfeile brauchen wir
- * die Punkte trotzdem in der Reihenfolge, in der die Nachricht laeuft.
- */
-function orientedCurve(from: Point, to: Point): [number, number][] {
-  const pts = curveBetween(from, to);
-  const head = pts[0];
-  const startsAtFrom =
-    Math.abs(head[0] - from.lat) < 1e-9 && Math.abs(head[1] - from.lon) < 1e-9;
-  return startsAtFrom ? pts : [...pts].reverse();
-}

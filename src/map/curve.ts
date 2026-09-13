@@ -6,36 +6,33 @@ export interface Point {
 }
 
 /**
- * Leicht gekruemmte Verbindung zwischen zwei Punkten (quadratische Bezier).
- * Die Kruemmung liegt im geografischen Raum, bleibt also ueber alle Zoomstufen
- * optisch gleich und trennt hin- und ruecklaufende Kanten sichtbar voneinander.
+ * Verbindung zwischen zwei Punkten als gerade Strecke.
  *
- * Die Reihenfolge der Endpunkte wird vorher normalisiert. Ohne das zeigt die
- * Woelbung je nach Aufrufrichtung zur anderen Seite - dieselbe Strecke laege
- * dann an zwei Orten, und beim Hervorheben erschiene eine zweite Linie daneben.
+ * Früher war das ein leicht gewölbter Bogen, damit sich hin- und rücklaufende
+ * Kanten unterscheiden lassen. Das Modell führt eine Funkstrecke aber ohnehin
+ * nur einmal - beide Richtungen stecken in derselben Kante. Der Bogen trennte
+ * damit nichts, verschob die Linie aber gegenüber der tatsächlichen Luftlinie
+ * und machte den Zusammenhang zwischen Karte und Höhenprofil unklar.
+ *
+ * Die Reihenfolge der Endpunkte wird normalisiert, damit dieselbe Strecke
+ * unabhängig von der Aufrufrichtung identische Punkte liefert.
  */
-export function curveBetween(a: Point, b: Point, bend = 0.14, steps = 18): [number, number][] {
+export function lineBetween(a: Point, b: Point): [number, number][] {
   const swap = a.lat !== b.lat ? a.lat > b.lat : a.lon > b.lon;
   const pa = swap ? b : a;
   const pb = swap ? a : b;
-  const latScale = Math.cos((((pa.lat + pb.lat) / 2) * Math.PI) / 180) || 1;
-  const dx = (pb.lon - pa.lon) * latScale;
-  const dy = pb.lat - pa.lat;
-  const mx = (pa.lon + pb.lon) / 2;
-  const my = (pa.lat + pb.lat) / 2;
-  // Kontrollpunkt senkrecht zur Verbindung
-  const cx = mx + (-dy * bend) / latScale;
-  const cy = my + dx * bend;
+  return [
+    [pa.lat, pa.lon],
+    [pb.lat, pb.lon],
+  ];
+}
 
-  const pts: [number, number][] = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const u = 1 - t;
-    const lon = u * u * pa.lon + 2 * u * t * cx + t * t * pb.lon;
-    const lat = u * u * pa.lat + 2 * u * t * cy + t * t * pb.lat;
-    pts.push([lat, lon]);
-  }
-  return pts;
+/** Wie lineBetween(), aber in Laufrichtung von `from` nach `to`. */
+export function orientedLine(from: Point, to: Point): [number, number][] {
+  return [
+    [from.lat, from.lon],
+    [to.lat, to.lon],
+  ];
 }
 
 export interface Rect {

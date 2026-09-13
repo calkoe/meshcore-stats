@@ -1,9 +1,13 @@
 /** Legende. Jede Kodierung der Karte ist hier benannt - auch die Strichbilder. */
 
 import type { JSX } from 'react';
+import { SIGNAL_STATUS } from '../../map/palette';
 import { usePreferences } from '../../state/preferences';
 import { useTopoView } from '../../state/store';
 import { fmtNum } from '../format';
+
+/** Die Schwellen der Signalstufen, in derselben Reihenfolge wie SIGNAL_STATUS. */
+const SIGNAL_BOUNDS = ['unter −95 dBm', '−95 bis −85', '−85 bis −75', 'über −75 dBm'];
 
 export function Legend(): JSX.Element {
   const { prefs } = usePreferences();
@@ -30,14 +34,36 @@ export function Legend(): JSX.Element {
         </li>
       </ul>
 
-      <div className="legend__scale">
-        <div className="legend__scale-label">Nachrichten je Strecke</div>
-        <div className={`legend__ramp${prefs.scale === 'heat' ? ' is-heat' : ''}`} />
-        <div className="legend__ends">
-          <span>wenig</span>
-          <span>{fmtNum(view.totals.maxLinkCount)}</span>
+      {prefs.scale === 'signal' ? (
+        <div className="legend__scale">
+          <div className="legend__scale-label">Linienfarbe: gemessener Empfang</div>
+          <ul className="legend legend--signal">
+            {SIGNAL_STATUS.map((step, i) => (
+              <li key={step.key}>
+                <span className="sig__dot" style={{ background: step.color }} />
+                {step.label} ({SIGNAL_BOUNDS[i]})
+              </li>
+            ))}
+            <li>
+              <span className="sig__dot sig__dot--none" />
+              nie selbst gehört
+            </li>
+          </ul>
+          <p className="legend__note">
+            Die Dicke zeigt weiterhin die Zahl der Pakete – Farbe und Dicke sagen hier also
+            Verschiedenes.
+          </p>
         </div>
-      </div>
+      ) : (
+        <div className="legend__scale">
+          <div className="legend__scale-label">Linienfarbe: Pakete je Strecke</div>
+          <div className="legend__ramp" />
+          <div className="legend__ends">
+            <span>wenig</span>
+            <span>{fmtNum(view.totals.maxLinkCount)}</span>
+          </div>
+        </div>
+      )}
 
       <ul className="legend legend--lines">
         <li>

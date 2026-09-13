@@ -149,6 +149,34 @@ export function cmdSendChannelTextMsg(
   return out;
 }
 
+/* ---------------- Kanaele ---------------- */
+
+/** CMD_GET_CHANNEL: [31][index] - antwortet mit RESP_CODE_CHANNEL_INFO oder ERR. */
+export function cmdGetChannel(index: number): Uint8Array {
+  return new Uint8Array([CMD.GET_CHANNEL, index]);
+}
+
+/**
+ * CMD_SET_CHANNEL: [32][index][name 32][secret 16] - genau 50 Byte.
+ *
+ * Die Laenge ist nicht beliebig: die Firmware prueft ZUERST auf 2+32+32 und
+ * antwortet darauf mit "nicht unterstuetzt". Nur der kuerzere Rahmen mit einem
+ * 128-Bit-Schluessel wird angenommen.
+ *
+ * Einen Loeschbefehl gibt es nicht. Ein Platz gilt als unbenutzt, wenn Name und
+ * Schluessel leer sind - Loeschen heisst also Ueberschreiben.
+ */
+export function cmdSetChannel(index: number, name: string, secretHex: string): Uint8Array {
+  const { out } = frame(CMD.SET_CHANNEL, 2 + 32 + 16);
+  out[1] = index;
+  const nameBytes = encodeUtf8(name).subarray(0, 31);
+  out.set(nameBytes, 2);
+  const secret = secretHex ? fromHex(secretHex) : new Uint8Array(16);
+  if (secret.length !== 16) throw new Error('Kanalschlüssel muss 16 Byte (32 Hex-Zeichen) haben');
+  out.set(secret, 2 + 32);
+  return out;
+}
+
 /* ---------------- Terminal: Anmeldung an einem fremden Knoten ---------------- */
 
 /**

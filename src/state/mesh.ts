@@ -28,10 +28,12 @@ import {
   cmdAppStart,
   cmdDeviceQuery,
   cmdGetBattAndStorage,
+  cmdGetChannel,
   cmdGetContacts,
   cmdGetDeviceTime,
   cmdGetTuningParams,
   cmdLogout,
+  cmdSetChannel,
   cmdSendChannelTextMsg,
   cmdSendLogin,
   cmdSendPathDiscovery,
@@ -120,6 +122,13 @@ interface HeardText {
 
 export type PacketListener = (chain: string[]) => void;
 
+export interface ChannelSlot {
+  index: number;
+  name: string;
+  /** 128-Bit-Schluessel als Hex. Leer, solange der Platz unbenutzt ist. */
+  secret: string;
+}
+
 export interface DeviceRuntime {
   batteryMilliVolts: number | null;
   storageUsedKb: number | null;
@@ -140,6 +149,8 @@ export class MeshController {
   deviceName = '';
   log: LogLine[] = [];
   terminals = new Map<string, TerminalSession>();
+  /** Belegte Kanalplaetze des Geraets, nach Index. */
+  channels = new Map<number, ChannelSlot>();
   runtime: DeviceRuntime = {
     batteryMilliVolts: null,
     storageUsedKb: null,
@@ -364,6 +375,52 @@ export class MeshController {
     void this.ble.send(cmdGetDeviceTime());
   }
 
+  /**
+   * Fragt alle Kanalplaetze der Reihe nach ab.
+   *
+   * Einen "gib mir alle Kanäle"-Befehl gibt es nicht; unbenutzte Plaetze
+   * beantwortet die Firmware mit ERR_CODE_NOT_FOUND. Deshalb wird jeder Platz
+   * einzeln abgefragt und der Fehler als "leer" gewertet, nicht als Stoerung.
+   */
+  async loadChannels(): Promise<void> {
+    if (!this.connected) return;
+    const max = this.model.deviceInfo?.maxChannels ?? 8;
+    this.channels.clear();
+    for (let i = 0; i < max; i++) {
+      const res = await this.sendAwaitingAck(cmdGetChannel(i), `Kanal ${i}`);
+      if (res.timeout) break; // Geraet antwortet nicht mehr - nicht weiter bohren.
+    }
+    this.bump('config');
+    this.bump('chat');
+  }
+
+  /** Legt einen Kanal an oder aendert ihn. */
+  async saveChannel(index: number, name: string, secretHex: string): Promise<AckResult> {
+    const res = await this.sendAwaitingAck(
+      cmdSetChannel(index, name, secretHex),
+      `Kanal ${index} speichern`,
+    );
+    if (res.ok) await this.sendAwaitingAck(cmdGetChannel(index), `Kanal ${index}`);
+    return res;
+  }
+
+  /**
+   * Loescht einen Kanal, indem der Platz mit leerem Namen und Nullschluessel
+   * ueberschrieben wird - einen eigenen Loeschbefehl kennt das Protokoll nicht.
+   */
+  async deleteChannel(index: number): Promise<AckResult> {
+    const res = await this.sendAwaitingAck(
+      cmdSetChannel(index, '', '0'.repeat(32)),
+      `Kanal ${index} löschen`,
+    );
+    if (res.ok) {
+      this.channels.delete(index);
+      this.bump('config');
+      this.bump('chat');
+    }
+    return res;
+  }
+
   /** Laedt SELF_INFO neu - noetig, nachdem Einstellungen geschrieben wurden. */
   reloadSelfInfo(): void {
     if (!this.connected) return;
@@ -406,6 +463,7 @@ export class MeshController {
         this.contactsLoading = true;
         void this.ble.send(cmdGetContacts());
         this.refreshRuntime();
+        void this.loadChannels();
         this.syncMessages();
         this.bump('config');
         this.bump('ui');
@@ -589,6 +647,24 @@ export class MeshController {
       case 'login_fail':
         this.handleLoginResult(frame.ok, frame.publicKeyPrefix, frame.permissions);
         break;
+
+      case 'channel_info': {
+        // Ein Platz ohne Namen gilt als unbenutzt - die Firmware kennt keinen
+        // Loeschbefehl, sie ueberschreibt nur.
+        if (frame.channelName) {
+          this.channels.set(frame.index, {
+            index: frame.index,
+            name: frame.channelName,
+            secret: frame.secret,
+          });
+        } else {
+          this.channels.delete(frame.index);
+        }
+        this.settleAck({ ok: true, text: `Kanal ${frame.index} gelesen` });
+        this.bump('config');
+        this.bump('chat');
+        break;
+      }
 
       case 'send_confirmed':
         this.model.markLastOutgoingDelivered();

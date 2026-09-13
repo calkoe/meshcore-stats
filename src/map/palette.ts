@@ -39,23 +39,6 @@ export const SEQ_LIGHT = [
   '#0d366b',
 ];
 
-/**
- * Sequentiell "Hitze" (umschaltbar): warme Rampe, ebenfalls streng monoton in
- * der Helligkeit - dadurch bleibt die Groesse auch ohne Farbsehen ablesbar,
- * obwohl mehrere Farbtoene durchlaufen werden.
- */
-export const HEAT_DARK = [
-  '#5b2a2a',
-  '#8a3320',
-  '#b8481a',
-  '#d9631a',
-  '#ee8420',
-  '#f7a83a',
-  '#fbc95f',
-  '#fde79a',
-];
-export const HEAT_LIGHT = [...HEAT_DARK].reverse();
-
 const TYPE_COLORS_DARK: Record<number, string> = {
   [ADV_TYPE.REPEATER]: '#d95926',
   [ADV_TYPE.ROOM]: '#199e70',
@@ -76,10 +59,13 @@ export function typeColor(type: number, theme: 'dark' | 'light'): string {
   return table[type] ?? table[ADV_TYPE.NONE];
 }
 
-export function seqRamp(scale: 'blue' | 'heat', theme: 'dark' | 'light'): string[] {
-  if (scale === 'heat') return theme === 'dark' ? HEAT_DARK : HEAT_LIGHT;
+/** Sequentielle Rampe fuer die Paketmenge. */
+export function seqRamp(theme: 'dark' | 'light'): string[] {
   return theme === 'dark' ? SEQ_DARK : SEQ_LIGHT;
 }
+
+/** Farbe für eine Strecke ohne gemessene Feldstärke. Neutral, nie "grün". */
+export const UNMEASURED_COLOR = { dark: '#6b6a66', light: '#a9a7a1' };
 
 export interface SignalStep {
   key: 'good' | 'warning' | 'serious' | 'critical';

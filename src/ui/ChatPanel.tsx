@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { TXT_TYPE } from '../protocol/constants';
+import { cmdResetPath } from '../protocol/commands';
 import { usePreferences } from '../state/preferences';
 import { useMesh, useSlice } from '../state/store';
 
@@ -30,8 +31,23 @@ export function ChatPanel({
   const [text, setText] = useState('');
   const [status, setStatus] = useState<{ text: string; cls: string }>({ text: '', cls: '' });
 
-  const msgs = controller.model.messages;
+  const all = controller.model.messages;
   const connected = controller.connected;
+
+  /*
+   * Ist ein Empfaenger gewaehlt, zeigt die Spalte nur noch den Verlauf mit
+   * genau diesem Gegenueber. Ohne Auswahl steht alles da - sonst waere nach
+   * dem Verbinden gar nichts zu sehen.
+   */
+  const msgs = target
+    ? all.filter((m) => {
+        if (target.startsWith('ch:')) {
+          return m.isChannel && m.channelIdx === Number(target.slice(3));
+        }
+        const pk = target.slice(3);
+        return !m.isChannel && (m.fromKey === pk || m.toKey === pk);
+      })
+    : all;
 
   useEffect(() => {
     const el = logRef.current;
@@ -45,6 +61,7 @@ export function ChatPanel({
     .sort((a, b) => a.name.localeCompare(b.name));
   const favorites = contacts.filter((c) => isFavorite(c.pubkey));
   const others = contacts.filter((c) => !isFavorite(c.pubkey));
+  const channels = [...controller.channels.values()].sort((a, b) => a.index - b.index);
 
   const send = async (): Promise<void> => {
     const body = text.trim();
@@ -58,7 +75,9 @@ export function ChatPanel({
     <aside className="chat">
       <div className="chat__head">
         <h2>Nachrichten</h2>
-        <span className="chat__hint">{connected ? 'verbunden' : 'nicht verbunden'}</span>
+        <span className="chat__hint">
+          {target ? `${msgs.length} von ${all.length}` : connected ? 'verbunden' : 'nicht verbunden'}
+        </span>
       </div>
 
       <div className="chat__log" ref={logRef}>
@@ -129,8 +148,18 @@ export function ChatPanel({
           value={target}
           onChange={(e) => onTargetChange(e.target.value)}
         >
-          <option value="">— Empfänger wählen —</option>
-          <option value="ch:0">Kanal 0 (Public)</option>
+          <option value="">— alle Nachrichten —</option>
+          <optgroup label="Kanäle">
+            {channels.length === 0 ? (
+              <option value="ch:0">Kanal 0</option>
+            ) : (
+              channels.map((c) => (
+                <option key={c.index} value={`ch:${c.index}`}>
+                  {c.name} (Kanal {c.index})
+                </option>
+              ))
+            )}
+          </optgroup>
           {favorites.length ? (
             <optgroup label="★ Favoriten">
               {favorites.map((c) => (
@@ -148,13 +177,7 @@ export function ChatPanel({
             ))}
           </optgroup>
         </select>
-        {target.startsWith('pk:') ? (
-          <div className="chat__path">
-            {controller.learnedPathTo(target.slice(3))
-              ? 'Der gelernte Weg dorthin liegt grün mit Pfeilen auf der Karte.'
-              : 'Kein Pfad gelernt – die Nachricht geht geflutet los.'}
-          </div>
-        ) : null}
+        {target.startsWith('pk:') ? <PathRow pubkey={target.slice(3)} /> : null}
         <div className="chat__row">
           <input
             type="text"
@@ -176,5 +199,50 @@ export function ChatPanel({
         <div className={`chat__status ${status.cls}`.trim()}>{status.text}</div>
       </form>
     </aside>
+  );
+}
+
+/**
+ * Zustand des gelernten Pfades zum gewaehlten Kontakt, mit der Moeglichkeit,
+ * ihn zu verwerfen.
+ *
+ * `CMD_RESET_PATH` setzt `out_path_len` im Geraet auf "unbekannt" zurueck -
+ * die naechste Nachricht geht danach wieder geflutet los und das Netz sucht
+ * einen neuen Weg. Nuetzlich, wenn ein Repeater auf der gelernten Route
+ * abgeschaltet wurde und Nachrichten seitdem haengen bleiben.
+ */
+function PathRow({ pubkey }: { pubkey: string }): JSX.Element {
+  const controller = useMesh();
+  const [note, setNote] = useState<string | null>(null);
+  const path = controller.learnedPathTo(pubkey);
+
+  const forget = async (): Promise<void> => {
+    const res = await controller.sendAwaitingAck(cmdResetPath(pubkey), 'Pfad zurücksetzen');
+    setNote(
+      res.ok
+        ? 'Pfad verworfen – die nächste Nachricht wird geflutet.'
+        : res.text,
+    );
+  };
+
+  return (
+    <div className="chat__path">
+      <span>
+        {path
+          ? `Gelernter Weg über ${path.length - 2} Hop${path.length - 2 === 1 ? '' : 's'} – grün auf der Karte.`
+          : 'Kein Pfad gelernt – die Nachricht geht geflutet los.'}
+      </span>
+      {path ? (
+        <button
+          type="button"
+          className="btn btn--sm"
+          title="Setzt den gelernten Weg zurück; die nächste Nachricht wird wieder geflutet"
+          onClick={() => void forget()}
+        >
+          Pfad vergessen
+        </button>
+      ) : null}
+      {note ? <span className="chat__pathnote">{note}</span> : null}
+    </div>
   );
 }

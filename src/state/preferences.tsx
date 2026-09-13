@@ -10,7 +10,16 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 export type Theme = 'dark' | 'light';
-export type Scale = 'blue' | 'heat';
+/**
+ * Was die Linienfarbe bedeutet.
+ *
+ * `packets` kodiert die Menge (Pakete je Strecke) auf einer sequentiellen
+ * Rampe - eine Hue, monoton in der Helligkeit. `signal` kodiert stattdessen
+ * die gemessene Empfangsstärke; das ist eine andere Art Größe und bekommt
+ * deshalb eine andere Art Palette: dieselben vier Stufen wie überall sonst im
+ * Programm, immer mit dem dBm-Wert daneben.
+ */
+export type Scale = 'packets' | 'signal';
 
 export interface Preferences {
   theme: Theme;
@@ -47,7 +56,7 @@ const DEFAULTS: Preferences = {
   onlyGateways: false,
   onlyDirect: false,
   onlyCertain: false,
-  scale: 'blue',
+  scale: 'packets',
   hotOnly: 0,
   persist: true,
   favorites: [],
@@ -61,7 +70,11 @@ function load(): Preferences {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULTS;
     const parsed = JSON.parse(raw) as Partial<Preferences>;
-    return { ...DEFAULTS, ...parsed };
+    const merged = { ...DEFAULTS, ...parsed };
+    // Aeltere Staende kannten 'blue' und 'heat' als zwei Mengenrampen. Beide
+    // meinten dasselbe und heissen jetzt 'packets'.
+    if (merged.scale !== 'packets' && merged.scale !== 'signal') merged.scale = 'packets';
+    return merged;
   } catch {
     return DEFAULTS;
   }

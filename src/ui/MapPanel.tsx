@@ -1,17 +1,21 @@
 /**
- * Die Karte samt allem, was darauf schwebt: Tooltip, Aktionsfenster eines
- * Knotens, Hinweiszeile, Farbskala und Schwellenregler.
+ * Die Karte samt allem, was darauf schwebt: Tooltip, Hinweiszeile, Farbskala
+ * und Schwellenregler.
+ *
+ * Die Fenster zu Knoten und Funkstrecken liegen NICHT hier - ein Klick öffnet
+ * einen Dialog, kein am Kartenrand herumrutschendes Popup. Was beim bloßen
+ * Überfahren erscheint, bleibt der leichte Tooltip.
  */
 
 import { useCallback, useEffect, useRef, useState, type JSX, type ReactNode } from 'react';
 import type L from 'leaflet';
 import { MapRenderer, type RenderStats } from '../map/renderer';
-import type { TopoView, ViewLink, ViewNode } from '../model/types';
+import type { TopoView, ViewLink } from '../model/types';
 import { useInteraction } from './interaction';
 import { useMesh, useTopoView } from '../state/store';
 import { usePreferences } from '../state/preferences';
 import { LinkTooltip, NodeTooltip } from './Tooltips';
-import { NodeActions } from './NodeActions';
+import { AnalysisDialog } from './dialogs/AnalysisDialog';
 
 interface Floating {
   x: number;
@@ -19,35 +23,28 @@ interface Floating {
   content: ReactNode;
 }
 
-export interface NodeActionState {
-  node: ViewNode;
-  x: number;
-  y: number;
-}
-
 export function MapPanel({
-  nodeAction,
-  onNodeAction,
   note,
   focusChain,
   focusLabel,
   focusGuess,
   onClearFocus,
   learnedPath,
+  partnerKey,
 }: {
-  nodeAction: NodeActionState | null;
-  onNodeAction(state: NodeActionState | null): void;
   note: string | null;
   focusChain: string[] | null;
   focusLabel: string | null;
   focusGuess: boolean;
   onClearFocus(): void;
   learnedPath: string[] | null;
+  partnerKey: string | null;
 }): JSX.Element {
   const controller = useMesh();
   const view = useTopoView();
   const { prefs, set } = usePreferences();
-  const { rendererRef, highlightChains, highlightNode, clearHighlight } = useInteraction();
+  const { rendererRef, highlightChains, highlightNode, clearHighlight, focusNode } =
+    useInteraction();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -56,6 +53,9 @@ export function MapPanel({
   viewRef.current = view;
 
   const [tooltip, setTooltip] = useState<Floating | null>(null);
+  /** Schluessel der Strecke, deren Analyse offen ist - nicht das Objekt selbst,
+   *  damit die Zahlen im Fenster mit der Aufzeichnung mitwachsen. */
+  const [analysisKey, setAnalysisKey] = useState<string | null>(null);
   const [stats, setStats] = useState<RenderStats>({
     totalLinks: 0,
     shownLinks: 0,
@@ -63,8 +63,8 @@ export function MapPanel({
     visibleMaxLink: 1,
   });
 
-  const onNodeActionRef = useRef(onNodeAction);
-  onNodeActionRef.current = onNodeAction;
+  const focusNodeRef = useRef(focusNode);
+  focusNodeRef.current = focusNode;
 
   /** Alle Routen hervorheben, die ueber diese Strecke laufen. */
   const chainsUsingLink = useCallback((link: ViewLink): string[][] => {
@@ -94,8 +94,9 @@ export function MapPanel({
         clearHighlight();
         setTooltip(null);
       },
-      onNodeClick: (node, point) => {
-        onNodeActionRef.current({ node, x: point.x, y: point.y });
+      onNodeClick: (node) => {
+        setTooltip(null);
+        focusNodeRef.current(node);
       },
       onLinkHover: (link, latlng) => {
         const chains = chainsUsingLink(link);
@@ -110,11 +111,11 @@ export function MapPanel({
         setTooltip(null);
       },
       onLinkClick: (link) => {
-        const node = viewRef.current.nodeForKey(link.a === controller.model.selfKey ? link.b : link.a);
-        if (node) onNodeActionRef.current({ node, x: 40, y: 40 });
+        setTooltip(null);
+        setAnalysisKey(link.key);
       },
       onStats: setStats,
-      onMapClick: () => onNodeActionRef.current(null),
+      onMapClick: () => setTooltip(null),
     });
     rendererRef.current = renderer;
     return () => {
@@ -138,6 +139,7 @@ export function MapPanel({
       hotOnly: prefs.hotOnly,
       focusChain,
       learnedPath,
+      partnerKey,
     });
   }, [
     rendererRef,
@@ -151,6 +153,7 @@ export function MapPanel({
     prefs.hotOnly,
     focusChain,
     learnedPath,
+    partnerKey,
   ]);
 
   // Neu eintreffende Pakete kurz aufleuchten lassen. Bewusst ohne React-
@@ -186,6 +189,9 @@ export function MapPanel({
 
   const thresholdLabel =
     stats.shownLinks === stats.totalLinks ? `alle ${stats.totalLinks}` : `Top ${stats.shownLinks}`;
+  const analysis = analysisKey ? view.links.get(analysisKey) : null;
+  const na = analysis ? view.nodeForKey(analysis.a) : null;
+  const nb = analysis ? view.nodeForKey(analysis.b) : null;
 
   return (
     <div className="mapwrap" ref={wrapRef}>
@@ -197,8 +203,14 @@ export function MapPanel({
         </div>
       ) : null}
 
-      {nodeAction ? (
-        <NodeActions state={nodeAction} onClose={() => onNodeAction(null)} wrapRef={wrapRef} />
+      {analysis && na && nb ? (
+        <AnalysisDialog
+          a={na}
+          b={nb}
+          link={analysis}
+          view={view}
+          onClose={() => setAnalysisKey(null)}
+        />
       ) : null}
 
       {focusLabel ? (
@@ -215,8 +227,7 @@ export function MapPanel({
           <button
             className="btn btn--sm"
             onClick={() => {
-              const chain = focusChain;
-              if (chain) controller.traceChain(chain, viewRef.current);
+              if (focusChain) controller.traceChain(focusChain, viewRef.current);
             }}
           >
             Trace
@@ -230,24 +241,25 @@ export function MapPanel({
       {note ? <div className="mapnote">{note}</div> : null}
 
       <div className="mapctl">
-        <div className="scaletoggle" role="group" aria-label="Farbskala der Auslastung">
-          <span className="scaletoggle__label">Auslastung</span>
-          <button
-            type="button"
-            className={`scaletoggle__btn${prefs.scale === 'blue' ? ' is-active' : ''}`}
-            aria-pressed={prefs.scale === 'blue'}
-            onClick={() => set('scale', 'blue')}
-          >
-            Blau
-          </button>
-          <button
-            type="button"
-            className={`scaletoggle__btn${prefs.scale === 'heat' ? ' is-active' : ''}`}
-            aria-pressed={prefs.scale === 'heat'}
-            onClick={() => set('scale', 'heat')}
-          >
-            Hitze
-          </button>
+        <div className="scaletoggle" role="group" aria-label="Bedeutung der Linienfarbe">
+          <span className="scaletoggle__label">Linienfarbe</span>
+          {(
+            [
+              ['packets', 'Pakete', 'Farbe nach der Zahl der Pakete über diese Strecke'],
+              ['signal', 'Signal', 'Farbe nach gemessener Empfangsstärke in dBm'],
+            ] as const
+          ).map(([value, label, title]) => (
+            <button
+              key={value}
+              type="button"
+              className={`scaletoggle__btn${prefs.scale === value ? ' is-active' : ''}`}
+              aria-pressed={prefs.scale === value}
+              title={title}
+              onClick={() => set('scale', value)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
         <div className="threshold">
           <label className="threshold__label" htmlFor="linkThreshold">

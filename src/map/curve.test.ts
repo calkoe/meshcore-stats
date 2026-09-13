@@ -1,35 +1,36 @@
 import { describe, expect, it } from 'vitest';
-import { curveBetween, rectsOverlap } from './curve';
+import { lineBetween, orientedLine, rectsOverlap } from './curve';
 
-describe('curveBetween', () => {
-  it('liefert dieselbe Kurve, egal in welcher Richtung sie berechnet wird', () => {
+describe('lineBetween', () => {
+  it('liefert dieselben Punkte, egal in welcher Richtung sie berechnet werden', () => {
     const a = { lat: 51.0, lon: 6.5 };
     const b = { lat: 50.8, lon: 7.1 };
-    const forward = curveBetween(a, b);
-    const backward = curveBetween(b, a);
-    // Ohne diese Normalisierung woelbt sich die Rueckrichtung zur anderen Seite -
-    // beim Hervorheben erschien dann eine zweite Linie neben der echten.
-    expect(backward).toEqual(forward);
+    // Ohne Normalisierung lägen Hervorhebung und Grundlinie an verschiedenen
+    // Stellen, sobald eine Route die Strecke in Gegenrichtung durchläuft.
+    expect(lineBetween(b, a)).toEqual(lineBetween(a, b));
   });
 
-  it('beginnt und endet exakt auf den Endpunkten', () => {
+  it('ist die Luftlinie, nicht mehr ein Bogen', () => {
     const a = { lat: 51.0, lon: 6.5 };
     const b = { lat: 50.8, lon: 7.1 };
-    const pts = curveBetween(a, b);
-    const ends = [pts[0], pts[pts.length - 1]];
-    expect(ends).toContainEqual([a.lat, a.lon]);
-    expect(ends).toContainEqual([b.lat, b.lon]);
+    const pts = lineBetween(a, b);
+    expect(pts).toHaveLength(2);
+    expect(pts).toContainEqual([a.lat, a.lon]);
+    expect(pts).toContainEqual([b.lat, b.lon]);
   });
+});
 
-  it('weicht in der Mitte von der Geraden ab', () => {
-    const pts = curveBetween({ lat: 51, lon: 6 }, { lat: 51, lon: 7 });
-    const mid = pts[Math.floor(pts.length / 2)];
-    expect(Math.abs(mid[0] - 51)).toBeGreaterThan(0.01);
+describe('orientedLine', () => {
+  it('behält die Laufrichtung bei - Grundlage der Richtungspfeile', () => {
+    const a = { lat: 50.8, lon: 7.1 };
+    const b = { lat: 51.0, lon: 6.5 };
+    expect(orientedLine(a, b)[0]).toEqual([a.lat, a.lon]);
+    expect(orientedLine(b, a)[0]).toEqual([b.lat, b.lon]);
   });
 });
 
 describe('rectsOverlap', () => {
-  it('erkennt Ueberschneidungen von Beschriftungen', () => {
+  it('erkennt Überschneidungen von Beschriftungen', () => {
     const a = { x: 0, y: 0, w: 10, h: 10 };
     expect(rectsOverlap(a, { x: 5, y: 5, w: 10, h: 10 })).toBe(true);
     expect(rectsOverlap(a, { x: 10, y: 0, w: 10, h: 10 })).toBe(false);

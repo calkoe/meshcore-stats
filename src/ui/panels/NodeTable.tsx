@@ -1,6 +1,6 @@
 /** Knotentabelle: ueberfahren hebt hervor, klicken oeffnet das Aktionsfenster. */
 
-import type { JSX } from 'react';
+import { Fragment, type JSX } from 'react';
 import { statAvg } from '../../model/topology';
 import type { ViewNode } from '../../model/types';
 import { usePreferences } from '../../state/preferences';
@@ -20,12 +20,16 @@ export function NodeTable(): JSX.Element {
     nodes = nodes.filter((n) => n.isSelf || (n.stats && n.stats.asTransmitter > 0));
   }
   /*
-   * Sortiert nach gemessener Empfangsstaerke, das staerkste Signal zuerst.
-   * Knoten ohne Messung haben keine Feldstaerke - sie wandern ans Ende und
-   * werden dort nach Verkehrsaufkommen geordnet, statt eine Null vorzutaeuschen.
+   * Reihenfolge: eigenes Geraet, dann Favoriten, dann der Rest. Innerhalb
+   * jeder Gruppe nach gemessener Empfangsstaerke, das staerkste Signal zuerst.
+   * Knoten ohne Messung haben keine Feldstaerke - sie wandern ans Ende ihrer
+   * Gruppe und werden dort nach Verkehrsaufkommen geordnet, statt eine Null
+   * vorzutaeuschen.
    */
+  const group = (n: ViewNode): number => (n.isSelf ? 0 : isFavorite(n.pubkey) ? 1 : 2);
   nodes = nodes.sort((a, b) => {
-    if (a.isSelf !== b.isSelf) return a.isSelf ? -1 : 1;
+    const g = group(a) - group(b);
+    if (g !== 0) return g;
     const ra = rssiOf(a);
     const rb = rssiOf(b);
     if (ra != null && rb != null) return rb - ra;
@@ -33,6 +37,9 @@ export function NodeTable(): JSX.Element {
     if (rb != null) return 1;
     return traffic(b) - traffic(a) || a.name.localeCompare(b.name);
   });
+  /** Erster Knoten ohne Favoritenstern - davor kommt eine Trennzeile. */
+  const firstOther = nodes.findIndex((n) => group(n) === 2);
+  const hasFavorites = nodes.some((n) => group(n) === 1);
 
   return (
     <div className="table-wrap">
@@ -58,12 +65,18 @@ export function NodeTable(): JSX.Element {
               </td>
             </tr>
           ) : (
-            nodes.map((node) => {
+            nodes.map((node, i) => {
               const rssi = rssiOf(node);
               const fav = isFavorite(node.pubkey);
+              const separator = hasFavorites && i === firstOther;
               return (
+                <Fragment key={node.key}>
+                {separator ? (
+                  <tr className="ntable__sep">
+                    <td colSpan={5}>übrige Knoten</td>
+                  </tr>
+                ) : null}
                 <tr
-                  key={node.key}
                   title="Klicken: auf der Karte zentrieren, Ping, Trace und Terminal"
                   onMouseEnter={() => highlightNode(node)}
                   onMouseLeave={() => clearHighlight()}
@@ -120,6 +133,7 @@ export function NodeTable(): JSX.Element {
                   <td className="num">{traffic(node) ? fmtNum(traffic(node)) : '—'}</td>
                   <td className="num">{rssi != null ? <Signal rssi={rssi} /> : '—'}</td>
                 </tr>
+                </Fragment>
               );
             })
           )}

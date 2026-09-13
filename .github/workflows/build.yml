@@ -141,8 +141,11 @@ jobs:
         run: |
           set -euo pipefail
           # React, Leaflet und das gesamte CSS stecken in der Datei. Zur Laufzeit
-          # darf nur EIN fremder Host angesprochen werden: der Kachelserver von
-          # OpenStreetMap - eine Weltkarte laesst sich nicht einbetten.
+          # duerfen genau ZWEI fremde Hosts angesprochen werden:
+          #   tile.openstreetmap.org - Kartenkacheln, eine Weltkarte laesst sich
+          #                            nicht einbetten.
+          #   api.open-meteo.com     - Gelaendehoehen fuer das Hoehenprofil, nur
+          #                            auf ausdruecklichen Klick.
           # Alles andere waere ein versehentlich wieder eingefuehrtes CDN.
           if grep -qE '<(script|link)[^>]+(src|href)="https?://' dist/index.html; then
             echo "::error::Die gebaute Datei laedt Skripte oder Stylesheets nach."
@@ -154,12 +157,13 @@ jobs:
           HOSTS=$(grep -oE 'https?://[a-zA-Z0-9.-]+' dist/index.html \
                   | sed -E 's#https?://##; s/[.-]+$//' | sort -u \
                   | grep -vE '^(localhost|www\.w3\.org|github\.com|reactjs\.org|leafletjs\.com|www\.openstreetmap\.org)$' || true)
-          if [ "$HOSTS" != "tile.openstreetmap.org" ] && [ -n "$HOSTS" ]; then
+          UNERWARTET=$(echo "$HOSTS" | grep -vE '^(tile\.openstreetmap\.org|api\.open-meteo\.com)$' || true)
+          if [ -n "$UNERWARTET" ]; then
             echo "::error::Unerwartete fremde Hosts im Build:"
-            echo "$HOSTS"
+            echo "$UNERWARTET"
             exit 1
           fi
-          echo "Nur Kartenkacheln kommen aus dem Netz."
+          echo "Aus dem Netz kommen nur Kartenkacheln und Geländehöhen."
 
       - name: Pruefen, dass die Version im Build steht
         if: startsWith(github.ref, 'refs/tags/v')

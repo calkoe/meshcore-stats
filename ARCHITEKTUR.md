@@ -65,10 +65,10 @@ Zwei Eigenheiten sind teuer erkauft und sollten nicht wieder verschwinden:
 - **Knoten liegen in einer eigenen Leaflet-Ebene** (`nodesPane`, z-index 450)
   über den Linien. Ohne das schiebt das Hervorheben eine Linie über den Marker –
   und der Klick landet auf der Linie statt auf dem Knoten.
-- **`curveBetween()` normalisiert die Reihenfolge der Endpunkte.** Sonst wölbt
-  sich dieselbe Strecke je nach Aufrufrichtung zur anderen Seite, und beim
-  Hervorheben erscheint eine zweite Linie daneben. Für die Richtungspfeile des
-  gelernten Pfades dreht `orientedCurve()` das Ergebnis bei Bedarf zurück.
+- **`lineBetween()` normalisiert die Reihenfolge der Endpunkte.** Sonst liegen
+  Grundlinie und Hervorhebung an verschiedenen Stellen, sobald eine Route die
+  Strecke in Gegenrichtung durchläuft. Für die Richtungspfeile des gelernten
+  Pfades liefert `orientedLine()` dieselbe Strecke in Laufrichtung.
 
 ## Quittungen ohne Vorgangsnummern
 
@@ -100,6 +100,12 @@ Lücke zeigen als sie plausibel füllen.**
   abgelesen* gekennzeichnet. Passt nichts, bleibt er leer.
 - Eine Paketrate wird erst ab 30 Sekunden Beobachtung ausgewiesen. Ein
   Sekundenbruchteil hochgerechnet ergibt eine Zahl, die nichts bedeutet.
+- Das Höhenprofil nennt seine Quelle und seine Lücken: 90-m-Raster, keine
+  Gebäude, keine Bäume, Antennenhöhe als Eingabe des Nutzers.
+- Eine leere Aufzeichnung überschreibt beim automatischen Sichern keine
+  gefüllte, solange der Nutzer nicht selbst verworfen hat. Ein zweiter Tab, der
+  die Seite frisch geladen hat, hatte sonst gereicht, um die Aufzeichnung des
+  ersten wegzuschreiben.
 
 ## Single-File-Build
 
@@ -107,10 +113,11 @@ Lücke zeigen als sie plausibel füllen.**
 `index.html`. Der Workflow prüft danach zweierlei: dass genau eine Datei
 entsteht, und dass kein `<script>`/`<link>` auf einen fremden Host zeigt.
 
-Die eine erlaubte Ausnahme sind die Kartenkacheln von OpenStreetMap – eine
-Weltkarte lässt sich nicht einbetten. Der Workflow prüft explizit, dass
-`tile.openstreetmap.org` der einzige fremde Host bleibt, damit ein versehentlich
-wieder eingeführtes CDN auffällt.
+Zwei Ausnahmen sind erlaubt und beide unvermeidlich: die Kartenkacheln von
+OpenStreetMap – eine Weltkarte lässt sich nicht einbetten – und das Höhenmodell
+von Open-Meteo, das nur beim Öffnen eines Höhenprofils abgefragt wird. Der
+Workflow prüft explizit, dass keine weiteren Hosts hinzukommen, damit ein
+versehentlich wieder eingeführtes CDN auffällt.
 
 ## Was getestet wird
 
@@ -126,7 +133,10 @@ wieder eingeführtes CDN auffällt.
   folgende Eindeutigkeit. Der heikelste Teil der Anwendung.
 - **`state/mesh.test.ts`** – wann eine Nachricht einem gehörten Paket zugeordnet
   werden darf und wann eben nicht.
-- **`map/curve.test.ts`** – Richtungsunabhängigkeit der Kurven.
+- **`map/curve.test.ts`** – Richtungsunabhängigkeit der Linien.
+- **`map/elevation.test.ts`** – Fresnelradius, Erdkrümmung und die Bewertung
+  „frei / angekratzt / verdeckt". Die Zahlen darin sind von Hand nachgerechnet,
+  nicht aus dem Code abgeleitet.
 
 Die Oberfläche selbst hat keine Tests; sie wird im Browser gegen ein echtes
 Gerät geprüft.

@@ -34,7 +34,7 @@ import { Modal } from './Modal';
 /** Bandbreiten, die LoRa-Module tatsaechlich koennen (kHz). */
 const BANDWIDTHS = [7.8, 10.4, 15.6, 20.8, 31.25, 41.7, 62.5, 125, 250, 500];
 
-type Section = 'grund' | 'funk' | 'mehr' | 'eingriff';
+type Section = 'grund' | 'funk' | 'kanal' | 'mehr' | 'eingriff';
 
 export function SettingsDialog({ onClose }: { onClose(): void }): JSX.Element {
   const controller = useMesh();
@@ -63,6 +63,9 @@ export function SettingsDialog({ onClose }: { onClose(): void }): JSX.Element {
             <Tab id="funk" cur={section} set={setSection}>
               Funkparameter
             </Tab>
+            <Tab id="kanal" cur={section} set={setSection}>
+              Kanäle
+            </Tab>
             <Tab id="mehr" cur={section} set={setSection}>
               Fortgeschritten
             </Tab>
@@ -73,6 +76,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }): JSX.Element {
 
           {section === 'grund' ? <Basics /> : null}
           {section === 'funk' ? <Radio /> : null}
+          {section === 'kanal' ? <Channels /> : null}
           {section === 'mehr' ? <Advanced /> : null}
           {section === 'eingriff' ? <Interventions /> : null}
 
@@ -445,6 +449,144 @@ function Radio(): JSX.Element {
       <Status text={status} />
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* Kanäle                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Gruppenkanäle des Geräts.
+ *
+ * Ein Kanal ist ein Platz mit Namen und 128-Bit-Schlüssel. Das Protokoll kennt
+ * kein Löschen – ein Platz gilt als frei, wenn Name und Schlüssel leer sind.
+ * Deshalb heißt „Löschen" hier: mit Leerwerten überschreiben.
+ *
+ * Der Schlüssel wird NICHT aus einem Passwort abgeleitet. MeshCore legt dafür
+ * kein Verfahren fest; ein selbst erfundenes würde zu keiner anderen App
+ * passen. Einzutragen sind daher 32 Hex-Zeichen – entweder aus einer anderen
+ * App kopiert oder hier neu gewürfelt.
+ */
+function Channels(): JSX.Element {
+  const controller = useMesh();
+  useSlice('config');
+  const max = controller.model.deviceInfo?.maxChannels ?? 8;
+  const [edit, setEdit] = useState<{ index: number; name: string; secret: string } | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const slots = Array.from({ length: max }, (_, i) => controller.channels.get(i) ?? null);
+
+  const save = async (): Promise<void> => {
+    if (!edit) return;
+    if (!/^[0-9a-fA-F]{32}$/.test(edit.secret)) {
+      setStatus('Der Schlüssel muss aus genau 32 Hex-Zeichen bestehen.');
+      return;
+    }
+    if (!edit.name.trim()) {
+      setStatus('Ein Kanal braucht einen Namen – ohne Namen gilt der Platz als leer.');
+      return;
+    }
+    setBusy(true);
+    const res = await controller.saveChannel(edit.index, edit.name.trim(), edit.secret.toLowerCase());
+    setBusy(false);
+    setStatus(res.text);
+    if (res.ok) setEdit(null);
+  };
+
+  const remove = async (index: number, name: string): Promise<void> => {
+    if (!window.confirm(`Kanal „${name}" löschen? Der Platz wird mit Leerwerten überschrieben.`)) {
+      return;
+    }
+    setBusy(true);
+    const res = await controller.deleteChannel(index);
+    setBusy(false);
+    setStatus(res.text);
+  };
+
+  return (
+    <div className="cfg">
+      <div className="chan">
+        {slots.map((slot, index) => (
+          <div className={`chan__row${slot ? '' : ' chan__row--empty'}`} key={index}>
+            <span className="chan__idx">{index}</span>
+            <span className="chan__name">{slot ? slot.name : 'frei'}</span>
+            <span className="chan__key">{slot ? `${slot.secret.slice(0, 8)}…` : ''}</span>
+            <button
+              className="btn btn--sm"
+              disabled={busy}
+              onClick={() =>
+                setEdit({ index, name: slot?.name ?? '', secret: slot?.secret ?? randomKey() })
+              }
+            >
+              {slot ? 'Ändern' : 'Anlegen'}
+            </button>
+            {slot ? (
+              <button
+                className="btn btn--sm btn--danger"
+                disabled={busy}
+                onClick={() => void remove(index, slot.name)}
+              >
+                Löschen
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      {edit ? (
+        <div className="chan__edit">
+          <h3>Kanal {edit.index}</h3>
+          <Field label="Name" hint="Erscheint als Absender-Kanal in den Nachrichten.">
+            <input
+              type="text"
+              maxLength={31}
+              value={edit.name}
+              onChange={(e) => setEdit({ ...edit, name: e.target.value })}
+            />
+          </Field>
+          <Field
+            label="Schlüssel (32 Hex-Zeichen)"
+            hint="Alle Teilnehmer eines Kanals brauchen denselben Schlüssel. Aus einer anderen App kopieren oder hier neu würfeln – aus einem Passwort lässt er sich nicht ableiten."
+          >
+            <div className="cfg__row">
+              <input
+                type="text"
+                spellCheck={false}
+                value={edit.secret}
+                onChange={(e) => setEdit({ ...edit, secret: e.target.value.trim() })}
+              />
+              <button className="btn btn--sm" onClick={() => setEdit({ ...edit, secret: randomKey() })}>
+                Neu würfeln
+              </button>
+            </div>
+          </Field>
+          <div className="cfg__row cfg__row--end">
+            <button className="btn btn--sm" onClick={() => setEdit(null)}>
+              Abbrechen
+            </button>
+            <button className="btn btn--sm btn--primary" disabled={busy} onClick={() => void save()}>
+              Speichern
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="cfg__row cfg__row--end">
+        <button className="btn btn--sm" disabled={busy} onClick={() => void controller.loadChannels()}>
+          Neu einlesen
+        </button>
+      </div>
+
+      <Status text={status} />
+    </div>
+  );
+}
+
+/** 128 Bit aus der Zufallsquelle des Browsers, als Hex. */
+function randomKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /* ------------------------------------------------------------------ */

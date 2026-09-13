@@ -15,7 +15,8 @@ import {
   type CSSProperties,
   type JSX,
 } from 'react';
-import { MapPanel, type NodeActionState } from './ui/MapPanel';
+import { MapPanel } from './ui/MapPanel';
+import { NodeDialog } from './ui/dialogs/NodeDialog';
 import { Sidebar } from './ui/Sidebar';
 import { ChatPanel } from './ui/ChatPanel';
 import { TopBar } from './ui/TopBar';
@@ -38,7 +39,9 @@ export function App(): JSX.Element {
   const viewRef = useRef<TopoView>(view);
   viewRef.current = view;
 
-  const [nodeAction, setNodeAction] = useState<NodeActionState | null>(null);
+  /** Schluessel des Knotens, dessen Fenster offen ist. Nicht das Objekt selbst,
+   *  damit die Zahlen darin mit der Aufzeichnung mitwachsen. */
+  const [nodeKey, setNodeKey] = useState<string | null>(null);
   // Der Startdialog erklaert, was die Anwendung tut. Wer schon eine
   // Aufzeichnung hat, kennt das - dann waere er nur ein Klick im Weg.
   const [showIntro, setShowIntro] = useState(() => !hasStoredRecording());
@@ -98,10 +101,8 @@ export function App(): JSX.Element {
   }, []);
 
   const focusNode = useCallback((node: ViewNode) => {
-    const renderer = rendererRef.current;
-    renderer?.panTo(node.key);
-    const point = renderer?.containerPointOf(node.key);
-    setNodeAction({ node, x: point?.x ?? 40, y: point?.y ?? 40 });
+    rendererRef.current?.panTo(node.key);
+    setNodeKey(node.key);
   }, []);
 
   const openTerminal = useCallback((node: ViewNode) => {
@@ -124,6 +125,7 @@ export function App(): JSX.Element {
   );
 
   const note = mapNote(controller.connState, view.totals.packets);
+  const nodeForDialog = nodeKey ? view.nodeForKey(nodeKey) : null;
 
   return (
     <InteractionProvider value={interaction}>
@@ -131,14 +133,13 @@ export function App(): JSX.Element {
       <main className="layout" style={{ '--sidebar-w': `${prefs.sidebarWidth}px` } as CSSProperties}>
         <Sidebar />
         <MapPanel
-          nodeAction={nodeAction}
-          onNodeAction={setNodeAction}
           note={note}
           focusChain={focusChain}
           focusLabel={focus?.label ?? null}
           focusGuess={focus?.guess ?? false}
           onClearFocus={() => setFocus(null)}
           learnedPath={learnedPath}
+          partnerKey={chatTarget.startsWith('pk:') ? chatTarget.slice(3) : null}
         />
         <ChatPanel
           target={chatTarget}
@@ -151,6 +152,9 @@ export function App(): JSX.Element {
         />
       </main>
 
+      {nodeForDialog ? (
+        <NodeDialog node={nodeForDialog} onClose={() => setNodeKey(null)} />
+      ) : null}
       {showIntro ? <IntroDialog onClose={() => setShowIntro(false)} /> : null}
       {showSettings ? <SettingsDialog onClose={() => setShowSettings(false)} /> : null}
       {terminalFor !== undefined ? (

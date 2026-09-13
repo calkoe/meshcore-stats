@@ -6,13 +6,17 @@ export function Modal({
   title,
   onClose,
   wide,
+  size,
   children,
 }: {
   title: string;
   onClose(): void;
+  /** Kurzform fuer size="wide". */
   wide?: boolean;
+  size?: 'wide' | 'xl';
   children: ReactNode;
 }): JSX.Element {
+  const variant = size ?? (wide ? 'wide' : null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose();
@@ -28,7 +32,11 @@ export function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={`modal__box${wide ? ' modal__box--wide' : ''}`} role="dialog" aria-modal="true">
+      <div
+        className={`modal__box${variant ? ` modal__box--${variant}` : ''}`}
+        role="dialog"
+        aria-modal="true"
+      >
         <div className="modal__head">
           <h2>{title}</h2>
           <button className="modal__close" aria-label="Schließen" onClick={onClose}>

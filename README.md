@@ -17,7 +17,7 @@ Bluetooth funktioniert nur über <code>https</code> oder <code>localhost</code> 
 <br><br>
 
 [![Build](https://img.shields.io/badge/build-single--file-3987e5)](.github/workflows/build.yml)
-[![Tests](https://img.shields.io/badge/tests-57%20passing-1c7c59)](src)
+[![Tests](https://img.shields.io/badge/tests-79%20passing-1c7c59)](src)
 [![Lizenz](https://img.shields.io/badge/lizenz-MIT-696e79)](#lizenz)
 [![Quelltext](https://img.shields.io/badge/quelltext-github.com%2Fcalkoe%2Fmeshcore--stats-24292f)](https://github.com/calkoe/meshcore-stats)
 
@@ -96,16 +96,23 @@ Byte. Der eigene `path_hash_mode` lässt sich in den Einstellungen ändern.
 
 ## Darstellung
 
-- **Liniendicke und -farbe** kodieren die Zahl der Pakete über eine Funkstrecke
-  (logarithmisch). Die Skala ist unten rechts zwischen **Blau** und **Hitze**
-  umschaltbar; beide sind streng monoton in der Helligkeit, die Größe bleibt
-  also auch ohne Farbsehen ablesbar.
+- **Liniendicke** kodiert immer die Zahl der Pakete über eine Funkstrecke
+  (logarithmisch). Die **Linienfarbe** ist unten rechts umschaltbar:
+  *Pakete* zeigt dieselbe Größe auf einer sequentiellen Rampe, *Signal* zeigt
+  stattdessen die gemessene Empfangsstärke in denselben vier Stufen, die auch
+  Tabellen und Tooltips verwenden. Strecken, die dieses Gerät nie selbst gehört
+  hat, bleiben dabei neutral grau – sie bekommen keine Bewertung.
+- **Linien sind Luftlinien.** Der frühere leichte Bogen trennte nichts (eine
+  Funkstrecke steht ohnehin nur einmal im Modell) und verschob die Linie
+  gegenüber dem Weg, den das Höhenprofil schneidet.
 - **Strichbild** trägt die Vorbehalte: durchgezogen = gemessen oder beobachtet,
   lang gestrichelt = deklarierte Route, fein punktiert = Zuordnung nicht
   eindeutig, **grün mit Pfeilen** = gelernter Weg zum aktuellen Chatpartner.
 - **Knotenfarbe** = Typ (Repeater/Gateway, Room-Server, Client, sonstige).
   Identität hängt nie allein an der Farbe – Beschriftung, Legende und Tabelle
   sagen dasselbe noch einmal.
+- **Eigenes Gerät und aktueller Chatpartner** tragen einen Hof und werden immer
+  beschriftet – nach diesen beiden sucht man beim Lesen der Karte ständig.
 - **Trifft ein Paket ein, leuchtet sein Weg kurz auf.**
 - **Schwellen-Slider** unten rechts blendet von *allen* Strecken bis auf die
   wenigen verkehrsreichsten aus (rangbasiert, damit das Ergebnis unabhängig vom
@@ -121,10 +128,18 @@ bekannter Teil sichtbar. Wie viele Knoten das betrifft, steht offen in der
 Kennzahlenleiste. Eine geschätzte Position sähe auf einer Karte genauso echt aus
 wie eine gemessene und würde mehr verwirren als helfen.
 
-## Ping und Trace
+## Zwei Fenster: Knoten und Funkstrecke
 
-**So startest du sie:** einen Knoten auf der Karte anklicken – oder eine Zeile in
-der Knotentabelle links. Beides öffnet dasselbe Aktionsfenster.
+Ein **Klick auf einen Knoten** – auf der Karte oder auf seine Zeile in der
+Knotentabelle – öffnet das Knotenfenster: links die Angaben aus der
+Aufzeichnung, rechts Ping, Trace und „Pfad vergessen", darunter bei Repeatern
+und Room-Servern gleich die **Befehlszeile des Knotens**.
+
+Ein **Klick auf eine Funkstrecke** öffnet das Streckenfenster: Verkehr und
+Empfang in Zahlen, Ping und Trace, und darunter das **Höhenprofil**.
+
+Der leichte Tooltip beim bloßen Überfahren bleibt davon unberührt; ein Klick ins
+Leere schließt die Fenster wieder.
 
 - **Ping** – `CMD_SEND_PATH_DISCOVERY_REQ`. Die Firmware setzt dafür eine
   Telemetrie-Anfrage bewusst als Flood ab; die Antwort liefert **Hin- und
@@ -136,14 +151,41 @@ der Knotentabelle links. Beides öffnet dasselbe Aktionsfenster.
   wenn sein Hash an der Position der bisher gesammelten SNR-Zahl steht, und das
   Ergebnis meldet der Knoten, der das Paket hört, nachdem alle Hashes
   abgearbeitet sind – der Pfad muss also zu uns zurückführen.
-- **Pfad zurücksetzen** – verwirft den gelernten Weg zu diesem Kontakt
-  (`CMD_RESET_PATH`); das Gerät sucht ihn danach neu.
+- **Pfad vergessen** – verwirft den gelernten Weg zu diesem Kontakt
+  (`CMD_RESET_PATH`); die nächste Nachricht geht danach wieder geflutet los.
+  Nützlich, wenn ein Repeater auf der gelernten Route abgeschaltet wurde und
+  Nachrichten seitdem hängen bleiben. Derselbe Knopf sitzt auch unter der
+  Empfängerauswahl im Chat.
+
+### Höhenprofil
+
+Im Streckenfenster steht unter den Zahlen der Geländeschnitt zwischen beiden
+Knoten, mit **Sichtlinie** und **erster Fresnelzone**. Gerechnet wird mit dem
+effektiven Erdradius k = 4/3; als frei gilt eine Strecke, wenn 60 % des ersten
+Fresnelradius unverbaut sind.
+
+Drei Dinge daran sind ausdrücklich keine Messung, und das Fenster sagt das auch:
+
+- Die Geländehöhen kommen aus einem **90-m-Raster** (Copernicus DEM über
+  Open-Meteo). **Gebäude, Wald und Masten sind darin nicht enthalten** – ein
+  „frei" ist kein Versprechen.
+- Die **Antennenhöhe über Grund** ist deine Angabe. Das Funkprotokoll überträgt
+  nur Länge und Breite; voreingestellt sind 2 m, bei einem Repeater auf einem
+  Turm liegt das deutlich daneben.
+- Für die Abfrage gehen die Koordinaten beider Knoten an `api.open-meteo.com` –
+  nur beim Öffnen dieses Fensters, nie beim Laden der Seite.
 
 ## Nachrichten
 
 Die rechte Spalte zeigt empfangene und gesendete Nachrichten mit SNR und
-Hop-Zahl. Favoriten stehen in der Empfängerliste ganz oben – gesetzt wird der
-Stern in der Knotentabelle oder im Aktionsfenster.
+Hop-Zahl. **Ist ein Empfänger gewählt, bleibt nur der Verlauf mit genau diesem
+Gegenüber stehen** – ohne Auswahl steht alles da.
+
+**Favoriten** stehen in der Empfängerliste ganz oben und in der Knotentabelle
+über allen anderen; gesetzt wird der Stern in der Tabelle oder im
+Knotenfenster. Sie liegen im Browser, nicht im Gerät: die Companion-Firmware
+kennt keine Favoriten, `ContactInfo.flags` ist dort für die Telemetrie-Freigabe
+vergeben.
 
 - **Klick auf eine Nachricht** blendet auf der Karte alles bis auf ihren Pfad
   aus. Wichtig: Der Weg steht **nicht in der Nachricht** – das Frame nennt nur
@@ -169,11 +211,19 @@ geantwortet hat, nicht was das Formular hofft.
 | **Grundlagen** | Knotenname, eigene Position (auch aus dem Browser), Uhr abgleichen, Advert senden (geflutet / nur Nachbarn), Geräteinfo, Akku, Speicher |
 | **Funkparameter** | Frequenz, Bandbreite, Spreizfaktor, Coderate, Sendeleistung – mit Rückfrage, die alte und neue Werte gegenüberstellt |
 | **Fortgeschritten** | Path-Hash-Modus, Telemetrie-Freigaben, Position im Advert, Mehrfach-ACKs, Zeitverhalten (`rx_delay_base`, `airtime_factor`) |
+| **Kanäle** | Gruppenkanäle anlegen, ändern und löschen |
 | **Eingriffe** | Neustart, BLE-PIN, Werksreset (nur nach Eintippen von `RESET`) |
 
 Einheiten sind in der Firmware uneinheitlich – Frequenz in kHz, Bandbreite in
 Hz. Die Builder in `src/protocol/commands.ts` rechnen das um und sind durch
 Tests abgedeckt.
+
+Zu den **Kanälen** zwei Eigenheiten des Protokolls: Einen Löschbefehl gibt es
+nicht – ein Platz gilt als frei, wenn Name und Schlüssel leer sind, „Löschen"
+heißt also Überschreiben. Und der 128-Bit-Schlüssel wird **nicht** aus einem
+Passwort abgeleitet; MeshCore legt dafür kein Verfahren fest, ein selbst
+erfundenes würde zu keiner anderen App passen. Einzutragen sind deshalb 32
+Hex-Zeichen – aus einer anderen App kopiert oder hier neu gewürfelt.
 
 ## Terminal
 
@@ -230,10 +280,12 @@ wie echter Funkverkehr – vorher „im Browser speichern" abschalten.
 - **Web Bluetooth** gibt es nur in Chrome und Edge auf dem Desktop, und nur im
   sicheren Kontext (`https://` oder `http://localhost`). Ein Doppelklick auf die
   heruntergeladene Datei genügt dafür nicht.
-- **Kartenkacheln** kommen zur Laufzeit von OpenStreetMap – eine Weltkarte lässt
-  sich nicht in eine HTML-Datei legen. Ohne Netz bleibt der Kartengrund leer,
-  die Topologie wird trotzdem gezeichnet. Der Build-Workflow prüft, dass
-  `tile.openstreetmap.org` der einzige fremde Host bleibt.
+- **Zwei Hosts werden zur Laufzeit angesprochen**, beide unvermeidlich:
+  `tile.openstreetmap.org` für die Kartenkacheln – eine Weltkarte lässt sich
+  nicht in eine HTML-Datei legen – und `api.open-meteo.com` für die
+  Geländehöhen, und das nur beim Öffnen eines Höhenprofils. Ohne Netz bleibt der
+  Kartengrund leer und das Profil aus; die Topologie wird trotzdem gezeichnet.
+  Der Build-Workflow prüft, dass keine weiteren Hosts hinzukommen.
 - **Adverts aus dem RX-Log werden nicht signaturgeprüft** (die Firmware prüft
   nur, was sie selbst als Kontakt übernimmt).
 - **Pakete, die die Firmware selbst verwerfen würde** (unbekannte
