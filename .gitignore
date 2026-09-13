@@ -5,3 +5,6 @@ dist/
 *.log
 .vite/
 .claude
+
+# Arbeitsordner fuer Rohaufnahmen; veroeffentlicht wird docs/
+screenshots/
