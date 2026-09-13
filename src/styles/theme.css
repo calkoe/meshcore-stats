@@ -1,0 +1,68 @@
+/* ------------------------------------------------------------------
+   Farbrollen statt Rohwerte.
+
+   Hell- und Dunkelmodus sind getrennt gesetzt, nicht automatisch
+   invertiert: eine gedrehte Palette trifft weder die Kontraste noch
+   die Reihenfolge der sequentiellen Rampe.
+   ------------------------------------------------------------------ */
+
+:root {
+  color-scheme: dark;
+
+  --surface-1: #1a1a19;
+  --surface-2: #222221;
+  --plane: #0d0d0d;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --ink-muted: #898781;
+  --hairline: rgba(255, 255, 255, 0.1);
+  --grid: #2c2c2a;
+
+  /* Kategorial: Knotentypen (Blau bleibt der sequentiellen Kantenskala) */
+  --type-repeater: #d95926;
+  --type-room: #199e70;
+  --type-chat: #9085e9;
+  --type-unknown: #898781;
+
+  /* Sequentiell: Verkehrsmenge je Funkstrecke */
+  --seq-1: #1c5cab;
+  --seq-4: #3987e5;
+  --seq-8: #cde2fb;
+
+  /* Status: Signalqualitaet, immer zusammen mit dem dBm-Wert */
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+
+  --accent: #3987e5;
+  --radius: 8px;
+  --sidebar-w: 356px;
+  --chat-w: 320px;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+body[data-theme='light'] {
+  color-scheme: light;
+
+  --surface-1: #fcfcfb;
+  --surface-2: #f2f2ef;
+  --plane: #f9f9f7;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --ink-muted: #6f6d68;
+  --hairline: rgba(11, 11, 11, 0.1);
+  --grid: #e1e0d9;
+
+  --type-repeater: #eb6834;
+  --type-room: #1baf7a;
+  --type-chat: #4a3aa7;
+  --type-unknown: #6f6d68;
+
+  --seq-1: #b7d3f6;
+  --seq-4: #3987e5;
+  --seq-8: #0d366b;
+
+  --accent: #2a78d6;
+}
